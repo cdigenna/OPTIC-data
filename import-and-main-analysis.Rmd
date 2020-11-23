@@ -1,0 +1,99 @@
+---
+title: "OPTIC-Vetted Data"
+author: "Catherine DiGennaro"
+date: "11/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidycensus)
+library(lubridate)
+```
+
+## R Markdown
+
+
+```{r cars}
+GSL <- readxl::read_excel("GSL/WEB_GSL.xlsx", sheet = 2) # Good Samaritan laws by state
+NAL <- readxl::read_excel("NAL/WEB_NAL.xlsx", sheet = 2) # Naloxone access laws by state
+PDMP <- readxl::read_excel("PDMP/WEB_PDMP.xlsx", sheet = 2) # Prescription drug monitoring programs by state
+```
+
+```{r}
+GSL <- GSL %>% 
+  mutate(date_anygsl=lubridate::as_date(date_anygsl),
+         date_gsl_arrest=lubridate::as_date(date_gsl_arrest))
+
+GSL_p <- GSL %>% 
+  mutate(state=fct_reorder(state, date_anygsl)) %>% 
+  ggplot(aes(x=date_anygsl, y=state, color=state)) +
+  geom_point(show.legend = FALSE)
+```
+
+```{r}
+NAL <- NAL %>% 
+  mutate(date_anynal=lubridate::as_date(date_anynal),
+         date_nal_protocol_standing=lubridate::as_date(date_nal_protocol_standing),
+         date_nal_Rx_prescriptive_auth=lubridate::as_date(date_nal_Rx_prescriptive_auth))
+
+NAL_p <- NAL %>% 
+  mutate(state=fct_reorder(state, date_anynal)) %>% 
+  ggplot(aes(x=date_anynal, y=state, color=state)) +
+  geom_point(show.legend = FALSE)
+```
+
+```{r}
+PDMP <- PDMP %>% 
+  mutate(date_AnyPDMP=lubridate::as_date(date_AnyPDMP),
+         date_electronic=lubridate::as_date(date_electronic),
+         date_prescriber_mustaccess=lubridate::as_date(date_prescriber_mustaccess),
+         state=case_when(state != "DC" ~ state.name[match(state, state.abb)],
+                         TRUE ~ "District of Columbia"))
+
+PDMP_p <- PDMP %>% 
+  mutate(state=fct_reorder(state,date_AnyPDMP)) %>% 
+  ggplot(aes(x=date_AnyPDMP, y=state, color=state)) +
+  geom_point(show.legend = FALSE)
+```
+
+All laws in one dataset
+```{r}
+GSL_simple <- GSL %>% 
+  select(state, date_anygsl, date_gsl_arrest) %>% 
+  distinct()
+
+NAL_simple <- NAL %>% 
+  select(state, date_anynal, date_nal_protocol_standing, date_nal_Rx_prescriptive_auth) %>% 
+  distinct()
+
+PDMP_simple <- PDMP %>% 
+  select(state, date_AnyPDMP, date_electronic, date_prescriber_mustaccess) %>% 
+  distinct()
+
+all_policies_df <- left_join(left_join(GSL_simple, NAL_simple, by="state"), PDMP_simple, by="state") %>% 
+  pivot_longer(cols=starts_with("date"))
+```
+ 
+Add census data to policy data
+```{r}
+# Sys.getenv("CENSUS_API_KEY")
+# census_api_key("[KEY]")
+policies_census_df <- left_join(all_policies_df, 
+                                get_estimates(geography="state", product="population", output="wide"), 
+                                by = c("state" = "NAME"))
+
+```
+
+```{r}
+all_policies_p <- policies_census_df %>%
+  filter(name %in% c("date_anygsl", "date_anynal", "date_AnyPDMP"),
+         value > as_date("2000-01-01")) %>% 
+  ggplot(aes(x=value, y=sort(POP))) +
+  geom_point() + 
+  facet_wrap(~name) +
+  theme_bw()
+```
+
+
